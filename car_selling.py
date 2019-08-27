@@ -12,9 +12,9 @@ from sklearn.linear_model import LinearRegression
 from sklearn.tree import DecisionTreeRegressor
 from sklearn.ensemble import RandomForestRegressor
 
-from keras.models import Sequential
-from keras import layers
-from keras.layers.normalization import BatchNormalization
+# from keras.models import Sequential
+# from keras import layers
+# from keras.layers.normalization import BatchNormalization
 from scipy import stats
 import math
 
@@ -30,7 +30,7 @@ def r2(y_pred, y_true):
     return 1 - res/tot
 
 
-def interval(x_train, y_train, y_mean, y_std, x_test, model, confidence=95):
+def interval(x_train, y_train, y_mean, y_std, x_test, model, confidence=95.0):
     """
     n is Number of Sample data while training
     mse is Mean Square error of trained dataset
@@ -50,6 +50,7 @@ def interval(x_train, y_train, y_mean, y_std, x_test, model, confidence=95):
     mse = mean_squared_error(y_train, y_train_pred)
 
     confidence = (100-confidence)/100/2
+
     t = stats.t.ppf(1-confidence, n)
 
     if x_train.shape[1] != x_test.shape[1]:
@@ -61,25 +62,27 @@ def interval(x_train, y_train, y_mean, y_std, x_test, model, confidence=95):
     lower = -t*temp
     upper = t*temp
 
-
-    x_test['target'] = np.round(model.predict(x_test),0)
-    x_test['lower'] = np.round(x_test.target + lower, 0)
-    x_test['upper'] = np.round(x_test.target + upper, 0)
+    x_test['target'] = model.predict(x_test)
+    x_test['lower'] = x_test.target + lower
+    x_test['upper'] = x_test.target + upper
     
     x_test['target'] = np.round(x_test.target * y_std + y_mean)
     x_test['lower'] = np.round(x_test.lower * y_std + y_mean)
     x_test['upper'] = np.round(x_test.upper * y_std + y_mean)
     var = '%s percentile variation'%(percentile_confidence)
     x_test[var] = np.round((x_test.target - x_test.upper)*100/x_test.target)
+    x_test.reset_index(drop=True)
     return x_test
 
 
+# Reading dataset
 path_json = 'oto_car_json.json'
 
 df = pd.read_json(path_json, lines=True)
 print('Total Dataset available before removing duplicates : %d' % (len(df)))
 
 
+# Preprocessing dataset
 df['km'] = df['km'].apply(lambda x: removedot(x))
 df['km'] = df['km'].apply(lambda x: float(x))
 df['price'] = df['price'].apply(lambda x: float(x))
@@ -107,13 +110,12 @@ print('Number of model : %d' % (len(model)))
 
 # Copying data
 data = df.copy()
+
 # ## Removing < 1%tile and >99% data
 # Since a lot of pricing given is incorrect
-
 lower = 0.01
 upper = 0.99
-
-percentile_confidence = 90
+percentile_confidence = 90.0
 
 print('Length of data before outlier removal: %d' % (len(data)))
 
@@ -122,11 +124,14 @@ data = data[data.price < data.price.quantile(upper)]
 
 print('Length of data after outlier removal: %d' % (len(data)))
 
-# List of car models availables with atleast 50 data points
-models = list(model.model[model['count'] > 50])
+# List of car models availables with atleast 200 data points
+models = list(model.model[model['count'] > 200])
+# models = ['honda crv (2012-2017) 2.4 i-vtec at']
 
+# Variables initialization
 forest_accuracy = {}
 nn_accuracy = {}
+cars = []
 
 for i in range(len(models)):
     print('Running %s model' % (models[i]))
@@ -192,7 +197,9 @@ for i in range(len(models)):
                                   'max %': round(acc_max, 2),
                                   '%s percentile'%(percentile_confidence): round(acc_95, 2)}
 
-    print('Completed %s model' % (models[i]))
+    predict = interval(x_train, y_train, y_mean, y_std, x_test, model=forest, confidence=percentile_confidence)
+    predict['model'] = models[i]
+    cars.append(predict)
 
     # # Neural Network training
     # # x_train = x_train.values
@@ -247,9 +254,11 @@ for i in range(len(models)):
 # df1 = pd.DataFrame(nn_accuracy)
 # print('Saving NN results to csv')
 # df1.to_csv('nn.csv')
-predict = interval(x_train, y_train, y_mean, y_std, x_test, model=forest, confidence=percentile_confidence)
 df = pd.DataFrame(forest_accuracy)
+
 print('Saving random forest results to csv')
 df.to_csv('forest.csv')
 
-predict.to_csv('predict.csv')
+data = pd.concat(cars)
+data = data.reset_index(drop=True)
+data.to_csv('predict.csv')
