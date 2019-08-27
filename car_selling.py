@@ -18,6 +18,7 @@ from sklearn.ensemble import RandomForestRegressor
 from scipy import stats
 import math
 
+random_state=10
 
 def removedot(s):
     s = s.replace('.', '')
@@ -157,11 +158,11 @@ for i in range(len(models)):
 
     x['km'] = (x['km'] - x_km_mean) / (x_km_std)
 
-    x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.25)
+    x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.25, random_state=random_state)
 
     forest = []
     forest = RandomForestRegressor(
-        max_depth=10, random_state=0, n_estimators=100)
+        max_depth=10, random_state=random_state, n_estimators=100)
     forest.fit(x_train, y_train)
 
     y_pred = forest.predict(x_test)
