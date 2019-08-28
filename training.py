@@ -1,12 +1,11 @@
 # import nltk
 import pandas as pd
 import json
-import matplotlib.pyplot as plt
 import numpy as np
-
+import config
+import os
 
 from sklearn.metrics import mean_squared_error
-import math
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LinearRegression
 from sklearn.tree import DecisionTreeRegressor
@@ -16,95 +15,48 @@ from sklearn.ensemble import RandomForestRegressor
 # from keras import layers
 # from keras.layers.normalization import BatchNormalization
 from scipy import stats
+from joblib import dump, load
 import math
 
-random_state=10
 
-def removedot(s):
-    s = s.replace('.', '')
-    return s
-
-
-def r2(y_pred, y_true):
-    res = np.sum(np.square(y_pred - y_true))
-    tot = np.sum(np.square(y_true - np.mean(y_true)))
-    return 1 - res/tot
-
-
-def interval(x_train, y_train, y_mean, y_std, x_test, model, confidence=95.0):
-    """
-    n is Number of Sample data while training
-    mse is Mean Square error of trained dataset
-    xi is independent variable (x_test) to be useds while predicting model
-    x is independent variable (x_train) which is used while training the model
-    model is trained sklearn model
-    confidence interval is how large your 
-    """
-    #Studnt, n=999, p<0.05, 2-tail
-    # equivalent to Excel TINV(0.05,999)
-    n = len(x_train)
-
-    if len(x_train) != len(y_train):
-        raise('Training data and variables shape is not equal')
-
-    y_train_pred = model.predict(x_train)
-    mse = mean_squared_error(y_train, y_train_pred)
-
-    confidence = (100-confidence)/100/2
-
-    t = stats.t.ppf(1-confidence, n)
-
-    if x_train.shape[1] != x_test.shape[1]:
-        raise('Parameters in x_train, x_test are not same. x has %d and xi has %d' % (
-            x_train.shape[1], x_test.shape[1]))
-
-    temp = math.sqrt(mse*(1 + 1/n + np.sum(np.square(x_test - x_train.mean(axis=0)).values
-                                           ) / np.sum(np.square(x_train - x_train.mean(axis=0)).values)))
-    lower = -t*temp
-    upper = t*temp
-
-    x_test['target'] = model.predict(x_test)
-    x_test['lower'] = x_test.target + lower
-    x_test['upper'] = x_test.target + upper
-    
-    x_test['target'] = np.round(x_test.target * y_std + y_mean)
-    x_test['lower'] = np.round(x_test.lower * y_std + y_mean)
-    x_test['upper'] = np.round(x_test.upper * y_std + y_mean)
-    var = '%s percentile variation'%(percentile_confidence)
-    x_test[var] = np.round((x_test.target - x_test.upper)*100/x_test.target)
-    x_test.reset_index(drop=True)
-    return x_test
+from src import processing
+from src import interval
 
 
 # Reading dataset
-path_json = 'oto_car_json.json'
-
-df = pd.read_json(path_json, lines=True)
-print('Total Dataset available before removing duplicates : %d' % (len(df)))
-
+path_json = config.path_data
+try:
+    df = pd.read_json(path_json, lines=True)
+    print('Total Dataset available before removing duplicates : %d' % (len(df)))
+except Exception as e:
+    raise('Unable to load dataset. Error %s' % (e))
 
 # Preprocessing dataset
-df['km'] = df['km'].apply(lambda x: removedot(x))
-df['km'] = df['km'].apply(lambda x: float(x))
-df['price'] = df['price'].apply(lambda x: float(x))
-df['fuel'] = df['fuel'].apply(lambda x: x.lower())
-df['model'] = df['model'].apply(lambda x: x.lower())
-df['brand'] = df['brand'].apply(lambda x: x.lower())
-df['city'] = df['city'].apply(lambda x: x.lower())
-df['type'] = df['type'].apply(lambda x: x.lower())
+try:
+    df['km'] = df['km'].apply(lambda x: processing.removedot(x))
+    df['km'] = df['km'].apply(lambda x: float(x))
+    df['price'] = df['price'].apply(lambda x: float(x))
+    df['fuel'] = df['fuel'].apply(lambda x: x.lower())
+    df['model'] = df['model'].apply(lambda x: x.lower())
+    df['brand'] = df['brand'].apply(lambda x: x.lower())
+    df['city'] = df['city'].apply(lambda x: x.lower())
+    df['type'] = df['type'].apply(lambda x: x.lower())
+except Exception as e:
+    raise('Unable to preprocess dataset. Error %s' %(e))
 
+# Droping duplicates
 df = df.drop_duplicates()
 print('Total Dataset available after removing duplicates : %d' % (len(df)))
 
+# Creating a count column for EDA
 df['count'] = 1
 
 # 4. Creating delta year wrt 2019
 # df['delta_year'] = 2019 - df['year']
-base_year = 2019
-df["delta_year"] = df["year"].apply(lambda x: base_year - x)
+df["delta_year"] = df["year"].apply(lambda x: config.base_year - x)
 df["model"] = df["model"].apply(lambda x: x.lower())
 
-# Collecting different models
+# Collecting different car models
 model = df.groupby('model').agg({'count': 'sum'}).reset_index()
 model = model.sort_values('count').reset_index(drop=True)
 print('Number of model : %d' % (len(model)))
@@ -112,21 +64,17 @@ print('Number of model : %d' % (len(model)))
 # Copying data
 data = df.copy()
 
-# ## Removing < 1%tile and >99% data
-# Since a lot of pricing given is incorrect
-lower = 0.01
-upper = 0.99
-percentile_confidence = 90.0
+# Removing < 1%tile and >99% data to remove outliers in selling prices
 
 print('Length of data before outlier removal: %d' % (len(data)))
 
-data = data[data.price > data.price.quantile(lower)]
-data = data[data.price < data.price.quantile(upper)]
+data = data[data.price > data.price.quantile(config.lower)]
+data = data[data.price < data.price.quantile(config.upper)]
 
 print('Length of data after outlier removal: %d' % (len(data)))
 
 # List of car models availables with atleast 200 data points
-models = list(model.model[model['count'] > 200])
+models = list(model.model[model['count'] > config.minimum_datapoint])
 # models = ['honda crv (2012-2017) 2.4 i-vtec at']
 
 # Variables initialization
@@ -134,6 +82,7 @@ forest_accuracy = {}
 nn_accuracy = {}
 cars = []
 
+# Iterating to all the models
 for i in range(len(models)):
     print('Running %s model' % (models[i]))
 
@@ -150,19 +99,24 @@ for i in range(len(models)):
 
     y = (y - y_mean)/y_std
 
+    # Creating a copy of dataset to get ready for training
     x = car_model[['km', 'delta_year']].copy()
 
     # Normalizing paramters datasets
     x_km_mean = x.km.mean()
     x_km_std = x.km.std()
 
+    # Normalizing KM driven feature but not delta year
     x['km'] = (x['km'] - x_km_mean) / (x_km_std)
 
-    x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.25, random_state=random_state)
+    # Performing train test split
+    x_train, x_test, y_train, y_test = train_test_split(
+        x, y, test_size=config.test_size, random_state=config.random_state)
 
+    # Initializing Random Forest model
     forest = []
     forest = RandomForestRegressor(
-        max_depth=10, random_state=random_state, n_estimators=100)
+        max_depth=config.max_depth, random_state=config.random_state, n_estimators=config.n_estimators)
     forest.fit(x_train, y_train)
 
     y_pred = forest.predict(x_test)
@@ -175,7 +129,7 @@ for i in range(len(models)):
 
     # Accuracy Metrics
     acc_RMSE = round(score, 4)
-    acc_R2 = r2(y_pred, y_test)
+    acc_R2 = processing.r2(y_pred, y_test)
 
     # Getting to original dataset
     y_abs_pred = y_pred*y_std + y_mean
@@ -191,14 +145,15 @@ for i in range(len(models)):
     acc_max = max(met)
 
     met.sort()
-    acc_95 = met[int(len(met)*percentile_confidence/100)]
+    acc_95 = met[int(len(met)*config.confidence_prediction_interval/100)]
 
     forest_accuracy[models[i]] = {'mean%': round(acc_mean, 2),
                                   'min %': round(acc_min, 2),
                                   'max %': round(acc_max, 2),
-                                  '%s percentile'%(percentile_confidence): round(acc_95, 2)}
+                                  '%s percentile' % (config.confidence_prediction_interval): round(acc_95, 2)}
 
-    predict = interval(x_train, y_train, y_mean, y_std, x_test, model=forest, confidence=percentile_confidence)
+    predict = interval.prediction_interval(x_train, y_train, y_mean, y_std, x_test,
+                       model=forest, confidence=config.confidence_prediction_interval)
     predict['model'] = models[i]
     cars.append(predict)
 
@@ -255,11 +210,16 @@ for i in range(len(models)):
 # df1 = pd.DataFrame(nn_accuracy)
 # print('Saving NN results to csv')
 # df1.to_csv('nn.csv')
+
+# Creating dataframe for accuracy assessment
 df = pd.DataFrame(forest_accuracy)
 
+# Saving results to csv
 print('Saving random forest results to csv')
-df.to_csv('forest.csv')
+df.to_csv(os.path.join(config.path_output, 'forest.csv'))
 
+# Saving prediction results for different models
 data = pd.concat(cars)
 data = data.reset_index(drop=True)
-data.to_csv('predict.csv')
+data.to_csv(os.path.join(config.path_output,'predict.csv'))
+print('Successfully Completed')
