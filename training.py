@@ -11,6 +11,10 @@ from sklearn.linear_model import LinearRegression
 from sklearn.tree import DecisionTreeRegressor
 from sklearn.ensemble import RandomForestRegressor
 
+# Creating Pipeline
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+
 # from keras.models import Sequential
 # from keras import layers
 # from keras.layers.normalization import BatchNormalization
@@ -21,7 +25,7 @@ import math
 
 from src import processing
 from src import interval
-
+from src import io
 
 # Reading dataset
 path_json = config.path_data
@@ -38,11 +42,12 @@ try:
     df['price'] = df['price'].apply(lambda x: float(x))
     df['fuel'] = df['fuel'].apply(lambda x: x.lower())
     df['model'] = df['model'].apply(lambda x: x.lower())
+    df['model'] = df['model'].apply(lambda x: x.replace('/', ''))
     df['brand'] = df['brand'].apply(lambda x: x.lower())
     df['city'] = df['city'].apply(lambda x: x.lower())
     df['type'] = df['type'].apply(lambda x: x.lower())
 except Exception as e:
-    raise('Unable to preprocess dataset. Error %s' %(e))
+    raise('Unable to preprocess dataset. Error %s' % (e))
 
 # Droping duplicates
 df = df.drop_duplicates()
@@ -93,52 +98,37 @@ for i in range(len(models)):
     y = car_model.price
     y = y.values
 
-    # Normalizing target datasets
-    y_mean = y.mean()
-    y_std = y.std()
-
-    y = (y - y_mean)/y_std
-
     # Creating a copy of dataset to get ready for training
     x = car_model[['km', 'delta_year']].copy()
-
-    # Normalizing paramters datasets
-    x_km_mean = x.km.mean()
-    x_km_std = x.km.std()
-
-    # Normalizing KM driven feature but not delta year
-    x['km'] = (x['km'] - x_km_mean) / (x_km_std)
 
     # Performing train test split
     x_train, x_test, y_train, y_test = train_test_split(
         x, y, test_size=config.test_size, random_state=config.random_state)
 
-    # Initializing Random Forest model
+    # Initializing Random Forest Pipeline model
+    pkl = {}
+
     forest = []
-    forest = RandomForestRegressor(
-        max_depth=config.max_depth, random_state=config.random_state, n_estimators=config.n_estimators)
+    forest = make_pipeline(StandardScaler(), RandomForestRegressor(
+        max_depth=config.max_depth, random_state=config.random_state, n_estimators=config.n_estimators))
+
+    # Fitting model
     forest.fit(x_train, y_train)
 
+    # Predicting on validation dataset
     y_pred = forest.predict(x_test)
     score = math.sqrt(mean_squared_error(y_pred, y_test))
 
     # Training data MSE
     y_train_pred = forest.predict(x_train)
-    mse = mean_squared_error(y_train_pred*y_std + y_mean,
-                             y_train*y_std + y_mean)
+    mse = mean_squared_error(y_train_pred, y_train)
 
     # Accuracy Metrics
     acc_RMSE = round(score, 4)
     acc_R2 = processing.r2(y_pred, y_test)
 
-    # Getting to original dataset
-    y_abs_pred = y_pred*y_std + y_mean
-    y_abs_test = y_test*y_std + y_mean
-
-    err = abs(y_abs_test - y_abs_pred)
-
     # Percentage Error
-    met = abs(y_abs_test - y_abs_pred)*100/y_abs_pred
+    met = abs(y_test - y_pred)*100/y_pred
 
     acc_mean = met.mean()
     acc_min = min(met)
@@ -147,15 +137,40 @@ for i in range(len(models)):
     met.sort()
     acc_95 = met[int(len(met)*config.confidence_prediction_interval/100)]
 
-    forest_accuracy[models[i]] = {'mean%': round(acc_mean, 2),
-                                  'min %': round(acc_min, 2),
-                                  'max %': round(acc_max, 2),
-                                  '%s percentile' % (config.confidence_prediction_interval): round(acc_95, 2)}
+    forest_accuracy[models[i]] = {'mean_%': round(acc_mean, 2),
+                                  'min_%': round(acc_min, 2),
+                                  'max_%': round(acc_max, 2),
+                                  '%s_percentile' % (config.confidence_prediction_interval): round(acc_95, 2)
+                                  }
 
-    predict = interval.prediction_interval(x_train, y_train, y_mean, y_std, x_test,
-                       model=forest, confidence=config.confidence_prediction_interval)
+    # Creating PKL file
+    pkl['model'] = forest
+    pkl['y_mean'] = y_train.mean()
+    pkl['x_mean'] = x_train.mean(axis=0).values
+    pkl['x_mse'] = np.sum(np.square(x_train - x_train.mean(axis=0)).values)
+    pkl['y_mse'] = mse
+    pkl['length'] = len(y_train)
+
+    print(pkl)
+
+    predict = interval.prediction_interval(n=len(x_train), x_train_mean=pkl['x_mean'], y_train_mean=pkl['y_mean'],
+                                           x_test=x_test, model=forest, y_mse=pkl['y_mse'], x_mse=pkl['x_mse'],
+                                           confidence=config.confidence_prediction_interval)
+
     predict['model'] = models[i]
     cars.append(predict)
+
+    # Saving Trained models
+    path_output = os.path.join(
+        config.path_pretrained_model, models[i].replace('/', ''))
+
+    # Check if exist or not
+    if not os.path.exists(path_output):
+        os.makedirs(path_output)
+
+    path_output = os.path.join(path_output, 'forest_' +
+                               str(config.version) + '.pkl')
+    io.save_model(pkl, path_output)
 
     # # Neural Network training
     # # x_train = x_train.values
@@ -216,10 +231,13 @@ df = pd.DataFrame(forest_accuracy)
 
 # Saving results to csv
 print('Saving random forest results to csv')
-df.to_csv(os.path.join(config.path_output, 'forest.csv'))
+df.to_csv(os.path.join(config.path_output,
+                       'forest_' + str(config.version) + '.csv'))
 
 # Saving prediction results for different models
 data = pd.concat(cars)
 data = data.reset_index(drop=True)
-data.to_csv(os.path.join(config.path_output,'predict.csv'))
+data.to_csv(os.path.join(config.path_output,
+                         'predict_' + str(config.version) + '_.csv'))
+
 print('Successfully Completed')
