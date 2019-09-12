@@ -1,7 +1,7 @@
 import os
 
 # Data source
-path_data = 'data/oto_car_json.json'
+path_data = 'data/training/suzuki_ertiga.csv'
 
 # Minimum data points to the model to take
 minimum_datapoint = 200

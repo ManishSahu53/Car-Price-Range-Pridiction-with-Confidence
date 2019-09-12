@@ -23,29 +23,28 @@ from joblib import dump, load
 import math
 
 
-from src import processing
-from src import interval
+from src import get_processing
+from src import get_interval
 from src import io
 
 # Reading dataset
 path_json = config.path_data
+
 try:
-    df = pd.read_json(path_json, lines=True)
+    df = pd.read_csv(path_json)
     print('Total Dataset available before removing duplicates : %d' % (len(df)))
 except Exception as e:
     raise('Unable to load dataset. Error %s' % (e))
 
 # Preprocessing dataset
 try:
-    df['km'] = df['km'].apply(lambda x: processing.removedot(x))
-    df['km'] = df['km'].apply(lambda x: float(x))
-    df['price'] = df['price'].apply(lambda x: float(x))
-    df['fuel'] = df['fuel'].apply(lambda x: x.lower())
+    df['km'] = df['Distance'].apply(lambda x: get_processing.convert_distance(x))
+    df['model'] = df['Brand']+ ' ' + df['Model']
     df['model'] = df['model'].apply(lambda x: x.lower())
-    df['model'] = df['model'].apply(lambda x: x.replace('/', ''))
-    df['brand'] = df['brand'].apply(lambda x: x.lower())
-    df['city'] = df['city'].apply(lambda x: x.lower())
-    df['type'] = df['type'].apply(lambda x: x.lower())
+    df['year'] = df['Year'].apply(lambda x: float(x))
+    df['price'] = df['Price'].apply(lambda x: get_processing.convert_price(x))
+    df['price'] = df['price'].apply(lambda x: float(x))
+
 except Exception as e:
     raise('Unable to preprocess dataset. Error %s' % (e))
 
@@ -125,7 +124,7 @@ for i in range(len(models)):
 
     # Accuracy Metrics
     acc_RMSE = round(score, 4)
-    acc_R2 = processing.r2(y_pred, y_test)
+    acc_R2 = get_processing.r2(y_pred, y_test)
 
     # Percentage Error
     met = abs(y_test - y_pred)*100/y_pred
@@ -153,7 +152,7 @@ for i in range(len(models)):
 
     print(pkl)
 
-    predict = interval.prediction_interval(n=len(x_train), x_train_mean=pkl['x_mean'], y_train_mean=pkl['y_mean'],
+    predict = get_interval.prediction_interval(n=len(x_train), x_train_mean=pkl['x_mean'], y_train_mean=pkl['y_mean'],
                                            x_test=x_test, model=forest, y_mse=pkl['y_mse'], x_mse=pkl['x_mse'],
                                            confidence=config.confidence_prediction_interval)
 

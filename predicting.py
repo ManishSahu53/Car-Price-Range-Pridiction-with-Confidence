@@ -5,9 +5,9 @@ import argparse
 import numpy as np
 import os
 
-from src import processing
+from src import get_processing
 from src import io
-from src import interval
+from src import get_interval
 
 # Arg Parser
 parser = argparse.ArgumentParser(
@@ -33,17 +33,22 @@ path_data = args.input
 path_output = args.output
 path_model = args.model
 
+# path_data = 'data/old.csv'
+# path_output = 'data/old_re.csv'
+# path_model = 'results/pretrained_model'
+
 # Loading dataset
 data = pd.read_csv(path_data)
 
 if path_output is None:
     path_output = path_data
 
+
 # Preprocessing dataset
 if 'km' in data.columns:
-    print('km column found')
-    data['km'] = data['km'].apply(lambda x: str(x))
-    data['km'] = data['km'].apply(lambda x: processing.removedot(x))
+    print('km column found. Converting to Float datatype')
+    # data['km'] = data['km'].apply(lambda x: str(x))
+    # data['km'] = data['km'].apply(lambda x: processing.removedot(x))
     data['km'] = data['km'].apply(lambda x: float(x))
 else:
     raise('Unable to get km column from CSV')
@@ -61,6 +66,7 @@ if 'model' in data.columns:
 
 else:
     raise('Unable to get model column from CSV')
+
 
 # Adding delta year column
 data["delta_year"] = data["year"].apply(lambda x: config.base_year - x)
@@ -83,8 +89,10 @@ for i in range(len(models)):
     car_model = data[data.model == models[i]].reset_index(drop=True)
 
     if car_model.empty:
+        print('Model data %s not found! Skipping this model' %(models[i]))
         continue
     else:
+        print('Model data %s found' %(models[i]))
         # Loading pickle file
         path_pkl = os.path.join(
             path_model, models[i], 'forest_%s' % (config.version) + '.pkl')
@@ -104,10 +112,15 @@ for i in range(len(models)):
         y_mse = model['y_mse']
         n = model['length']
 
-        x_predict = interval.prediction_interval(n, x_mean, y_mean, x_predict, forest,
+        x_predict = get_interval.prediction_interval(n, x_mean, y_mean, x_predict, forest,
                                                  y_mse, x_mse, confidence=config.confidence_prediction_interval)
         prediction.append(x_predict)
 
-output = pd.concat(prediction)
-output = output.reset_index(drop=True)
-output.to_csv(path_output)
+if prediction:
+    output = pd.concat(prediction)
+    output['price'] = data.price
+
+    output = output.reset_index(drop=True)
+    output.to_csv(path_output)
+else:
+    print('No Suitable model found')
