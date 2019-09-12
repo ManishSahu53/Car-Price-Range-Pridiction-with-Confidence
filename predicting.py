@@ -88,6 +88,9 @@ for i in range(len(models)):
     # Taking one particular model
     car_model = data[data.model == models[i]].reset_index(drop=True)
 
+    # Creating the new KPI
+    car_model['delta_year_km'] = car_model['km'] * car_model['delta_year']
+
     if car_model.empty:
         print('Model data %s not found! Skipping this model' %(models[i]))
         continue
@@ -103,7 +106,7 @@ for i in range(len(models)):
             raise('Unable to load model from %s. Error: %s' % (path_pkl, e))
 
         forest = model['model']
-        x_predict = car_model[['km', 'delta_year']].copy()
+        x_predict = car_model[['km', 'delta_year', 'delta_year_km']].copy()
         y_predict = forest.predict(x_predict)
 
         x_mean = model['x_mean']

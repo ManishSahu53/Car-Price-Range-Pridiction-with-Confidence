@@ -92,13 +92,16 @@ for i in range(len(models)):
 
     # Taking one particular model
     car_model = data[data.model == models[i]].reset_index(drop=True)
+    
+    # Creating a new KPI, Delta_year * KM
+    car_model['delta_year_km'] = car_model['km'] * car_model['delta_year']
 
     # Extracting x and y values
     y = car_model.price
     y = y.values
 
     # Creating a copy of dataset to get ready for training
-    x = car_model[['km', 'delta_year']].copy()
+    x = car_model[['km', 'delta_year', 'delta_year_km']].copy()
 
     # Performing train test split
     x_train, x_test, y_train, y_test = train_test_split(

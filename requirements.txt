@@ -2,3 +2,6 @@ sklean
 pandas
 numpy
 scipy
+flask
+flask_compress
+flask_cors
