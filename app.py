@@ -9,6 +9,7 @@ import os
 import joblib
 
 import numpy as np
+import pandas as pd
 from flask_compress import Compress
 from flask_cors import CORS
 
@@ -127,8 +128,9 @@ def price():
             return get_exception.general(msg)
         
         x_predict = np.array([km_driven[i], delta_year, km_driven[i]*delta_year])
-        
         x_predict = x_predict.reshape(1, -1)
+        x_predict = pd.DataFrame(x_predict, columns=['km', 'delta_year', 'delta_year_km'])
+        
 
         try:
             y_predict = forest.predict(x_predict)
@@ -142,13 +144,21 @@ def price():
         y_mse = pretrained[car_model]['y_mse']
         n = pretrained[car_model]['length']
 
-        # try:
-        #     x_predict = get_interval.prediction_interval(n, x_mean, y_mean, x_predict, forest,
-        #                                                 y_mse, x_mse, confidence=confidence)
-        # except Exception as e:
-        #     msg = 'Error: Unable to get prediction interval. %s' %(e)
-        #     return get_exception.general(msg)
-        info['data'].append(round(y_predict[0]))
+        try:
+            x_predict = get_interval.prediction_interval(n, x_mean, y_mean, x_predict, forest,
+                                                        y_mse, x_mse, confidence=confidence)
+            predict_dict = x_predict.to_dict()
+            predict_dict.pop('delta_year_km', None)
+            predict_dict.pop('km', None)
+            predict_dict.pop('delta_year', None)
+            predict_dict.pop('%s_percentile_variation'%(confidence), None)
+
+
+        except Exception as e:
+            msg = 'Error: Unable to get prediction interval. %s' %(e)
+            return get_exception.general(msg)
+        
+        info['data'].append(predict_dict)
     
     return (jsonify(info))
 

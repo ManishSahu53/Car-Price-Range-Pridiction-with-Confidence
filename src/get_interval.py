@@ -22,8 +22,13 @@ def prediction_interval(n, x_train_mean, y_train_mean, x_test, model, y_mse, x_m
     confidence = (100-confidence)/100/2
 
     t = stats.t.ppf(1-confidence, n)
-
-    temp = math.sqrt(y_mse*(1 + 1/n + np.sum(np.square(x_test.values - x_train_mean)) / x_mse))
+    
+    # If Datatypr if Dataframe or NDArray
+    if type(x_test) is pd.core.frame.DataFrame:
+        temp = math.sqrt(y_mse*(1 + 1/n + np.sum(np.square(x_test.values - x_train_mean)) / x_mse))
+    elif type(x_test) is np.ndarray:
+        temp = math.sqrt(y_mse*(1 + 1/n + np.sum(np.square(x_test - x_train_mean)) / x_mse))
+    
     lower = -t*temp
     upper = t*temp
 
@@ -31,7 +36,7 @@ def prediction_interval(n, x_train_mean, y_train_mean, x_test, model, y_mse, x_m
     x_test['lower'] = np.round(x_test.target + lower, 0)
     x_test['upper'] = np.round(x_test.target + upper, 0)
 
-    var = '%s percentile variation' % (config.confidence_prediction_interval)
+    var = '%s_percentile_variation' % (config.confidence_prediction_interval)
     x_test[var] = np.round((x_test.target - x_test.upper)*100/x_test.target)
     x_test.reset_index(drop=True)
     return x_test
