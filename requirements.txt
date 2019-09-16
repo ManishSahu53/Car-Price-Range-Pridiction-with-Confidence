@@ -1,7 +1,10 @@
-sklean
+sklearn
 pandas
 numpy
 scipy
 flask
 flask_compress
 flask_cors
+requests
+gunicorn
+gevent
