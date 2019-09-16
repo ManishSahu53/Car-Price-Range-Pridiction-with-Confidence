@@ -37,7 +37,7 @@ All the parameters used in this model are given in [config.py](config.py).
 
 
 ### **Results**
-All the results are given in ![docs](https://docs.google.com/document/d/1XG84zG2qVd0ufv2gSTpq3s0hvim7qRiubw-NI6mEmSM/edit) here
+All the results are given in [docs](https://docs.google.com/document/d/1XG84zG2qVd0ufv2gSTpq3s0hvim7qRiubw-NI6mEmSM/edit) here
 
 
 ## How to Train
